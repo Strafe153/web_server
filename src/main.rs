@@ -1,6 +1,5 @@
 use std::{
     env,
-    error::Error,
     io::{BufRead, BufReader},
     net::{TcpListener, TcpStream},
 };
@@ -35,7 +34,6 @@ impl TryFrom<&str> for HttpMethod {
 
 #[derive(Debug)]
 enum HttpVersion {
-    V0_9,
     V1,
     V1_1,
 }
@@ -45,11 +43,10 @@ impl TryFrom<&str> for HttpVersion {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "HTTP/0.9" => Ok(HttpVersion::V0_9),
             "HTTP/1.0" => Ok(HttpVersion::V1),
             "HTTP/1.1" => Ok(HttpVersion::V1_1),
-            "HTTP/2" | "HTTP/3" => Err(HttpParseError(
-                "Only HTTP/1.0 and HTTP/1.1 are supported.".to_string(),
+            "HTTP/0.9" | "HTTP/2" | "HTTP/3" => Err(HttpParseError(
+                "Only HTTP/1.1 and HTTP/1.0 are supported.".to_string(),
             )),
             _ => Err(HttpParseError("Incorrect HTTP version".to_string())),
         }
@@ -111,20 +108,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut port = 1717;
 
     if args.len() > 1 {
-        // gracefully handle error
-        port = args[1].parse::<u16>().unwrap();
+        port = args[1].parse::<u16>()?;
     }
 
-    // if error - port is occupied, handle that
-    let listener = TcpListener::bind(("127.0.0.1", port))?;
-    println!("Listening");
+    let listener_result = TcpListener::bind(("127.0.0.1", port));
 
-    for stream in listener.incoming() {
-        let temp = stream.unwrap();
-        // handle error
-        let request_line = read_request_line(temp)?;
-        let t = HttpRequestLine::parse(request_line);
-        println!("{:#?}", t);
+    match listener_result {
+        Ok(listener) => {
+            println!("Listening");
+
+            for stream_result in listener.incoming() {
+                let stream = stream_result.unwrap();
+
+                let request_line = read_request_line(stream)?;
+                let request_line_result = HttpRequestLine::parse(request_line);
+                println!("{:#?}", request_line_result);
+            }
+        }
+        Err(_) => println!("Failed to bind to TCP port {}.", port),
     }
 
     Ok(())
